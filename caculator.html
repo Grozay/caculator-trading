@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quyền's Trading Calculator</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #f4f7f6;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #2c3e50;
+            font-size: 20px;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 15px;
+        }
+
+        /* Ẩn mũi tên lên xuống của thẻ input number */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            appearance: none;
+            margin: 0; 
+        }
+
+        input[type=number] {
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+
+        .result-box {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        .warning {
+            color: #d32f2f;
+            font-size: 12px;
+            margin-top: 10px;
+            display: none;
+            background: #ffebee;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .safe {
+            color: #2e7d32;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="card">
+        <h2>Futures Calculator (2% Risk)</h2>
+
+        <div class="group">
+            <label>Vốn hiện tại (USD)</label>
+            <input type="number" id="balance" value="189.9" oninput="onBalanceChange()">
+        </div>
+
+        <div class="group">
+            <label>Rủi ro mỗi lệnh (%)</label>
+            <input type="number" id="riskPer" value="2" oninput="saveAndCalc()">
+        </div>
+
+        <div class="group">
+            <label>Tiền ký quỹ/Margin</label>
+            <div style="display: flex; gap: 10px;">
+                <input type="number" id="marginPer" placeholder="%" value="10" title="Phần trăm ký quỹ" oninput="syncMarginFromPer()">
+                <input type="number" id="margin" placeholder="USD" value="19" title="Ký quỹ USD" oninput="syncMarginFromUSD()">
+            </div>
+        </div>
+
+        <hr>
+
+        <div class="group">
+            <label>Giá Entry</label>
+            <input type="number" id="entry" placeholder="Ví dụ: 80990" oninput="calc()">
+        </div>
+
+        <div class="group">
+            <label>Giá Stop Loss</label>
+            <input type="number" id="sl" placeholder="Ví dụ: 80388" oninput="calc()">
+        </div>
+
+        <div class="result-box">
+            <div class="result-item"><span>Khoảng cách SL:</span> <span id="res-sl-per">0%</span></div>
+            <div class="result-item"><span>Tổng Volume:</span> <span id="res-volume">0 USD</span></div>
+            <div class="result-item" style="color: #007bff;"><span>Đòn bẩy:</span> <span id="res-lev">x0</span></div>
+        </div>
+
+        <div id="warning-box" class="warning">
+            ⚠️ Cảnh báo: Đòn bẩy cao so với SL. Sàn có thể thanh lý trước khi chạm SL. Hãy tăng Margin hoặc giảm rủi ro!
+        </div>
+        <div class="safe">* Đã bao gồm trừ hao 10% phí và trượt giá.</div>
+    </div>
+
+    <script>
+        // Load dữ liệu từ LocalStorage
+        window.onload = () => {
+            if (localStorage.getItem('trade_data')) {
+                const data = JSON.parse(localStorage.getItem('trade_data'));
+                if (data.balance) document.getElementById('balance').value = data.balance;
+                if (data.riskPer) document.getElementById('riskPer').value = data.riskPer;
+                if (data.margin) document.getElementById('margin').value = data.margin;
+                if (data.marginPer) document.getElementById('marginPer').value = data.marginPer;
+            }
+            syncMarginFromUSD(); // Cập nhật lại % margin khi load
+        }
+
+        function onBalanceChange() {
+            syncMarginFromUSD();
+        }
+
+        function syncMarginFromPer() {
+            const balance = parseFloat(document.getElementById('balance').value) || 0;
+            const marginPer = parseFloat(document.getElementById('marginPer').value) || 0;
+            if (balance > 0) {
+                document.getElementById('margin').value = parseFloat((balance * marginPer / 100).toFixed(4));
+            }
+            saveAndCalc();
+        }
+
+        function syncMarginFromUSD() {
+            const balance = parseFloat(document.getElementById('balance').value) || 0;
+            const margin = parseFloat(document.getElementById('margin').value) || 0;
+            if (balance > 0) {
+                document.getElementById('marginPer').value = parseFloat((margin / balance * 100).toFixed(4));
+            }
+            saveAndCalc();
+        }
+
+        function saveAndCalc() {
+            const data = {
+                balance: document.getElementById('balance').value,
+                riskPer: document.getElementById('riskPer').value,
+                margin: document.getElementById('margin').value,
+                marginPer: document.getElementById('marginPer').value
+            };
+            localStorage.setItem('trade_data', JSON.stringify(data));
+            calc();
+        }
+
+        function calc() {
+            const balance = parseFloat(document.getElementById('balance').value);
+            const riskPer = parseFloat(document.getElementById('riskPer').value);
+            const margin = parseFloat(document.getElementById('margin').value);
+            const entry = parseFloat(document.getElementById('entry').value);
+            const sl = parseFloat(document.getElementById('sl').value);
+
+            if (!entry || !sl || entry === sl) return;
+
+            const riskAmt = balance * (riskPer / 100);
+            const slPer = Math.abs(entry - sl) / entry * 100;
+
+            // Volume để lỗ đúng số tiền rủi ro
+            const volume = riskAmt / (slPer / 100);
+            const leverage = volume / margin;
+
+            document.getElementById('res-sl-per').innerText = slPer.toFixed(2) + '%';
+            document.getElementById('res-volume').innerText = volume.toFixed(2) + ' USD';
+            document.getElementById('res-lev').innerText = 'x' + Math.round(leverage);
+
+            // Logic trừ hao: Kiểm tra khả năng thanh lý
+            // Nếu đòn bẩy * %SL > 90, rủi ro thanh lý cực cao
+            const liqCheck = leverage * slPer;
+            const warningBox = document.getElementById('warning-box');
+            if (liqCheck > 85) {
+                warningBox.style.display = 'block';
+            } else {
+                warningBox.style.display = 'none';
+            }
+        }
+    </script>
+
+</body>
+
+</html>
